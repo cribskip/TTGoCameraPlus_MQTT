@@ -34,13 +34,14 @@
 #define USE_HSPI_PORT
 
 // Current Performance
-// HQVGA, JPEG Decode ~68ms, Total Render time per Frame ~86ms = 11,6 frames/second
+// HQVGA, Near-realtime stream to display, some tearing
+// 200ms Conversion to (M)JPEG
 
 #include "esp_camera.h"
 #include <WiFi.h>
 
-#include <TFT_eSPI.h>       // Hardware-specific library
-TFT_eSPI tft = TFT_eSPI();  // Invoke custom library
+#include <TFT_eSPI.h>
+TFT_eSPI tft = TFT_eSPI();
 
 // Select camera model
 #define CAMERA_MODEL_TTGO
@@ -52,7 +53,6 @@ const char* ssid = "";
 const char* password = "";
 
 void startCameraServer();
-camera_fb_t * fb = NULL;
 
 void config_camera() {
   if (! psramFound()) {
@@ -81,7 +81,7 @@ void config_camera() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
+  config.pixel_format = PIXFORMAT_RGB565;
   //PIXFORMAT_YUV422;  // Colors incorrect, Picture ok
   //PIXFORMAT_JPEG; // Has to be decoded most of the time
   //PIXFORMAT_RGB565; // Colors incorrect, Picture ok
@@ -131,39 +131,49 @@ void setup() {
   //tft.setTextSize(2);
 
   WiFi.begin(ssid, password);
-  //while (WiFi.status() != WL_CONNECTED) {
-  delay(250);
-  Serial.print(".");
-  //}
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
+    //Serial.print(F("."));
+  }
   Serial.print(F("WiFi"));
 
   startCameraServer();
   Serial.print(F("WWW"));
   digitalWrite(TFT_BACKLIGHT, HIGH); // Backlight on
-  delay(1000);
-  
+
   Serial.print(F("Camera Ready! Use 'http://"));
   //Serial.print(WiFi.localIP());
+  Serial.println();
+
+  tft.setSwapBytes(true);
 }
 
 void localstream() {
+  Serial.println("LOC");
+  camera_fb_t * fb = NULL;
   fb = esp_camera_fb_get();
   esp_err_t res = ESP_OK;
-  
+
   if (!fb) {
-    Serial.println(F("Camera capture failed"));
+    Serial.println(F("Stream failed"));
   }
 
   if (fb->format == PIXFORMAT_JPEG) {
     drawArrayJpeg(fb->buf, fb->len, 0, 0);
+  } else {
+    tft.setAddrWindow(0, 0, 240, 180);
+    tft.pushColors(fb->buf, fb->len);
   }
-  esp_camera_fb_return(fb);
+
+  if (fb) {
+    esp_camera_fb_return(fb);
+    fb = NULL;
+  }
+  Serial.println("END");
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  //delay(10000);
   yield();
-  //if (!fb) fb = esp_camera_fb_get();
+
   localstream();
 }
