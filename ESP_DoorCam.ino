@@ -11,6 +11,28 @@
 // TFT_eSPI
 // JPEG_Decoder
 
+// Config for TFT_eSPI (User_Setup.h)
+#define ST7789_DRIVER      // Full configuration option, define additional parameters below for this display
+#define TFT_CS   12  // Chip select control pin D8
+#define TFT_DC   15  // Data Command control pin
+#define TFT_RST  -1  // Reset pin (could connect to NodeMCU RST, see next line)
+#define TFT_BL 2  // LED back-light (only for ST7789 with backlight control pin)
+#define TFT_MISO 22
+#define TFT_MOSI 19
+#define TFT_SCLK 21
+#define LOAD_GLCD   // Font 1. Original Adafruit 8 pixel font needs ~1820 bytes in FLASH
+#define LOAD_FONT2  // Font 2. Small 16 pixel high font, needs ~3534 bytes in FLASH, 96 characters
+#define LOAD_FONT4  // Font 4. Medium 26 pixel high font, needs ~5848 bytes in FLASH, 96 characters
+#define LOAD_FONT6  // Font 6. Large 48 pixel font, needs ~2666 bytes in FLASH, only characters 1234567890:-.apm
+#define LOAD_FONT7  // Font 7. 7 segment 48 pixel font, needs ~2438 bytes in FLASH, only characters 1234567890:-.
+#define LOAD_FONT8  // Font 8. Large 75 pixel font needs ~3256 bytes in FLASH, only characters 1234567890:-.
+#define LOAD_GFXFF  // FreeFonts. Include access to the 48 Adafruit_GFX free fonts FF1 to FF48 and custom fonts
+#define SMOOTH_FONT
+#define SPI_FREQUENCY  80000000
+#define SPI_READ_FREQUENCY  20000000
+#define SPI_TOUCH_FREQUENCY  2500000
+#define USE_HSPI_PORT
+
 // Current Performance
 // HQVGA, JPEG Decode ~68ms, Total Render time per Frame ~86ms = 11,6 frames/second
 
