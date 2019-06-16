@@ -26,7 +26,8 @@
 #include <JPEGDecoder.h>  // JPEG decoder library
 extern void drawArrayJpeg(const uint8_t arrayname[], uint32_t array_size, int xpos, int ypos);
 
-extern camera_fb_t * fb;
+#include <TFT_eSPI.h>
+extern TFT_eSPI tft;
 
 typedef struct {
   httpd_req_t *req;
@@ -89,12 +90,12 @@ static size_t jpg_encode_stream(void * arg, size_t index, const void* data, size
 }
 
 static esp_err_t capture_handler(httpd_req_t *req) {
-  //camera_fb_t * fb = NULL;
   esp_err_t res = ESP_OK;
+  camera_fb_t * fb = NULL;
 
-  //fb = esp_camera_fb_get();
+  fb = esp_camera_fb_get();
   if (!fb) {
-    Serial.println(F("Camera capture failed"));
+    Serial.println(F("Capture failed"));
     httpd_resp_send_500(req);
     return ESP_FAIL;
   }
@@ -102,62 +103,27 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "image/jpeg");
   httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
 
-  size_t out_len, out_width, out_height;
-  uint8_t * out_buf;
   bool s;
-  if (fb->width > 400 || fb->format == PIXFORMAT_JPEG) {
-    size_t fb_len = 0;
-    if (fb->format == PIXFORMAT_JPEG) {
-      fb_len = fb->len;
-      res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
-    } else {
-      jpg_chunking_t jchunk = {req, 0};
-      res = frame2jpg_cb(fb, 80, jpg_encode_stream, &jchunk) ? ESP_OK : ESP_FAIL;
-      httpd_resp_send_chunk(req, NULL, 0);
-      fb_len = jchunk.len;
-    }
 
-    //esp_camera_fb_return(fb);
-    return res;
+  if (fb->format == PIXFORMAT_JPEG) {
+    res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
+  } else {
+    tft.setAddrWindow(0, 0, 240, 180);
+    tft.pushColors(fb->buf, fb->len);
+    Serial.println(F("CONV"));
+    jpg_chunking_t jchunk = {req, 0};
+    res = frame2jpg_cb(fb, 40, jpg_encode_stream, &jchunk) ? ESP_OK : ESP_FAIL;
+    Serial.println(F("SEND"));
+    httpd_resp_send_chunk(req, NULL, 0);
+    Serial.println(F("OK"));
   }
-
-  dl_matrix3du_t *image_matrix = dl_matrix3du_alloc(1, fb->width, fb->height, 3);
-  if (!image_matrix) {
-    esp_camera_fb_return(fb);
-    Serial.println(F("dl_matrix3du_alloc failed"));
-    httpd_resp_send_500(req);
-    return ESP_FAIL;
-  }
-
-  out_buf = image_matrix->item;
-  out_len = fb->width * fb->height * 3;
-  out_width = fb->width;
-  out_height = fb->height;
-
-  s = fmt2rgb888(fb->buf, fb->len, fb->format, out_buf);
-  Serial.println("CONV");
 
   esp_camera_fb_return(fb);
-  if (!s) {
-    dl_matrix3du_free(image_matrix);
-    Serial.println(F("to rgb888 failed"));
-    httpd_resp_send_500(req);
-    return ESP_FAIL;
-  }
-
-  jpg_chunking_t jchunk = {req, 0};
-  s = fmt2jpg_cb(out_buf, out_len, out_width, out_height, PIXFORMAT_RGB888, 90, jpg_encode_stream, &jchunk);
-  dl_matrix3du_free(image_matrix);
-  if (!s) {
-    Serial.println(F("JPEG compression failed"));
-    return ESP_FAIL;
-  }
-
   return res;
 }
 
 static esp_err_t stream_handler(httpd_req_t *req) {
-  //camera_fb_t * fb = NULL;
+  camera_fb_t * fb = NULL;
   esp_err_t res = ESP_OK;
   size_t _jpg_buf_len = 0;
   uint8_t * _jpg_buf = NULL;
@@ -181,6 +147,8 @@ static esp_err_t stream_handler(httpd_req_t *req) {
       res = ESP_FAIL;
     } else {
       if (fb->format != PIXFORMAT_JPEG) {
+        tft.setAddrWindow(0, 0, 240, 180);
+        tft.pushColors(fb->buf, fb->len);
         bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
         esp_camera_fb_return(fb);
         fb = NULL;
@@ -191,7 +159,6 @@ static esp_err_t stream_handler(httpd_req_t *req) {
       } else {
         _jpg_buf_len = fb->len;
         _jpg_buf = fb->buf;
-        drawArrayJpeg(fb->buf, fb->len, 0, 0);
       }
     }
 
