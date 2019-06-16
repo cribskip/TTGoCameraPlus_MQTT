@@ -26,10 +26,7 @@
 #include <JPEGDecoder.h>  // JPEG decoder library
 extern void drawArrayJpeg(const uint8_t arrayname[], uint32_t array_size, int xpos, int ypos);
 
-#include <Adafruit_GFX.h>    // Core graphics library
-#include <Adafruit_ST7789.h> // Hardware-specific library for ST7789
-#include <SPI.h>
-extern Adafruit_ST7789 tft;
+extern camera_fb_t * fb;
 
 typedef struct {
   httpd_req_t *req;
@@ -91,37 +88,19 @@ static size_t jpg_encode_stream(void * arg, size_t index, const void* data, size
   return len;
 }
 
-void displayRGB565(unsigned char * frame, int xres, int yres)
-{
-  tft.setAddrWindow(0, 0, yres - 1, xres - 1);
-  int i = 0;
-  for (int x = 0; x < xres; x++)
-    for (int y = 0; y < yres; y++)
-    {
-      i = (y * xres + x) << 1;
-      tft.pushColor(frame[i] | (frame[i + 1] << 8));
-      //tft.pushColor(((frame[i] | (frame[i + 1] << 8)) >> 1) & 0b111101111101111); //dimming to test for tft error
-    }
-}
-
 static esp_err_t capture_handler(httpd_req_t *req) {
-  Serial.println("W");
-
-  camera_fb_t * fb = NULL;
+  //camera_fb_t * fb = NULL;
   esp_err_t res = ESP_OK;
 
-  fb = esp_camera_fb_get();
+  //fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println(F("Camera capture failed"));
     httpd_resp_send_500(req);
     return ESP_FAIL;
   }
-  Serial.println("X");
 
   httpd_resp_set_type(req, "image/jpeg");
   httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
-
-  Serial.println("Y");
 
   size_t out_len, out_width, out_height;
   uint8_t * out_buf;
@@ -129,30 +108,19 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   if (fb->width > 400 || fb->format == PIXFORMAT_JPEG) {
     size_t fb_len = 0;
     if (fb->format == PIXFORMAT_JPEG) {
-      Serial.println("AAH");
       fb_len = fb->len;
       res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
-
-      Serial.println("PAINT");
-      //tft.fillScreen(0x0000);
-      drawArrayJpeg(fb->buf, fb->len, 0, 0);
     } else {
-      Serial.println("Buf2TFT");
-      tft.fillScreen(1);
-      tft.drawBitmap(0, 0, fb->buf, 240, 240, 0);
-
       jpg_chunking_t jchunk = {req, 0};
       res = frame2jpg_cb(fb, 80, jpg_encode_stream, &jchunk) ? ESP_OK : ESP_FAIL;
       httpd_resp_send_chunk(req, NULL, 0);
       fb_len = jchunk.len;
     }
 
-    esp_camera_fb_return(fb);
+    //esp_camera_fb_return(fb);
     return res;
   }
 
-
-  Serial.println("ENTRY");
   dl_matrix3du_t *image_matrix = dl_matrix3du_alloc(1, fb->width, fb->height, 3);
   if (!image_matrix) {
     esp_camera_fb_return(fb);
@@ -177,7 +145,6 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
-
   jpg_chunking_t jchunk = {req, 0};
   s = fmt2jpg_cb(out_buf, out_len, out_width, out_height, PIXFORMAT_RGB888, 90, jpg_encode_stream, &jchunk);
   dl_matrix3du_free(image_matrix);
@@ -190,7 +157,7 @@ static esp_err_t capture_handler(httpd_req_t *req) {
 }
 
 static esp_err_t stream_handler(httpd_req_t *req) {
-  camera_fb_t * fb = NULL;
+  //camera_fb_t * fb = NULL;
   esp_err_t res = ESP_OK;
   size_t _jpg_buf_len = 0;
   uint8_t * _jpg_buf = NULL;
@@ -224,6 +191,7 @@ static esp_err_t stream_handler(httpd_req_t *req) {
       } else {
         _jpg_buf_len = fb->len;
         _jpg_buf = fb->buf;
+        drawArrayJpeg(fb->buf, fb->len, 0, 0);
       }
     }
 
@@ -238,7 +206,6 @@ static esp_err_t stream_handler(httpd_req_t *req) {
       res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
     }
     if (fb) {
-      drawArrayJpeg(fb->buf, fb->len, 0, 0);
       esp_camera_fb_return(fb);
       fb = NULL;
       _jpg_buf = NULL;
