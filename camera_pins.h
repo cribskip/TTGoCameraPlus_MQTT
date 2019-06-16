@@ -18,6 +18,8 @@
 #define HREF_GPIO_NUM     27
 #define PCLK_GPIO_NUM     25
 
+#define TFT_BACKLIGHT      2
+
 #else
 #error "Camera model not selected"
 #endif
