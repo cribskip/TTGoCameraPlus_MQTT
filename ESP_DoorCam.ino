@@ -35,22 +35,26 @@
 
 // Current Performance
 // HQVGA, Near-realtime stream to display, some tearing
-// 200ms Conversion to (M)JPEG
 
+#define CAMERA_MODEL_TTGO
+#include "camera_pins.h"
 #include "esp_camera.h"
 #include <WiFi.h>
+
+camera_fb_t * fb = NULL;
 
 #include <TFT_eSPI.h>
 TFT_eSPI tft = TFT_eSPI();
 
-// Select camera model
-#define CAMERA_MODEL_TTGO
-
-#include "camera_pins.h"
-
 // WiFi Credentials
 const char* ssid = "";
 const char* password = "";
+
+TaskHandle_t tGetImage;
+TaskHandle_t tDrawImage;
+
+#include "esp_http_server.h"
+extern httpd_handle_t camera_httpd;
 
 void startCameraServer();
 
@@ -58,6 +62,7 @@ void config_camera() {
   if (! psramFound()) {
     while (1) {
       Serial.println(F("YOUR BOARD DOES NOT HAVE PSRAM!"));
+      delay(200);
     }
   }
 
@@ -82,6 +87,7 @@ void config_camera() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_RGB565;
+
   //PIXFORMAT_YUV422;  // Colors incorrect, Picture ok
   //PIXFORMAT_JPEG; // Has to be decoded most of the time
   //PIXFORMAT_RGB565; // Colors incorrect, Picture ok
@@ -90,9 +96,10 @@ void config_camera() {
   //FRAMESIZE_UXGA
   //FRAMESIZE_HQVGA; // 240x160
   //FRAMESIZE_QVGA;  // 320x240
+
   config.frame_size = FRAMESIZE_HQVGA;
   config.jpeg_quality = 10;
-  config.fb_count = 2;
+  config.fb_count = 1;
 
   // camera init
   esp_err_t err = esp_camera_init(&config);
@@ -113,67 +120,97 @@ void config_camera() {
 }
 
 void setup() {
-  WiFi.mode(WIFI_OFF);
   pinMode(TFT_BACKLIGHT, OUTPUT);
   digitalWrite(TFT_BACKLIGHT, LOW); // Backlight off
 
+  WiFi.mode(WIFI_OFF);
+
   Serial.begin(115200);
   Serial.setDebugOutput(true);
+
   Serial.println();
   Serial.println(F("BOOT"));
   config_camera();
 
   tft.begin();
-  //tft.setFont();
-  //tft.setRotation(2);
-  tft.fillScreen(TFT_DARKGREY);
-  //tft.setTextColor(0xFFFF);
-  //tft.setTextSize(2);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setSwapBytes(true);
 
+  //WiFi.forceSleepWake();
+  delay(1);
+
+  // Disable the WiFi persistence.  The ESP8266 will not load and save WiFi settings in the flash memory, prevent flash wearing
+  WiFi.persistent(false);
+
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
-    delay(100);
-    //Serial.print(F("."));
+    delay(500);
+    Serial.print(F("."));
   }
-  Serial.print(F("WiFi"));
+  Serial.println(F("WiFi"));
 
   startCameraServer();
-  Serial.print(F("WWW"));
-  digitalWrite(TFT_BACKLIGHT, HIGH); // Backlight on
+  Serial.println(F("WWW"));
 
   Serial.print(F("Camera Ready! Use 'http://"));
-  //Serial.print(WiFi.localIP());
-  Serial.println();
+  Serial.println(WiFi.localIP());
 
-  tft.setSwapBytes(true);
+  digitalWrite(TFT_BACKLIGHT, HIGH); // Backlight on
+
+  xTaskCreatePinnedToCore(
+    GetImage, /* Function to implement the task */
+    "GetImage", /* Name of the task */
+    10000,  /* Stack size in words */
+    NULL,  /* Task input parameter */
+    0,  /* Priority of the task */
+    &tGetImage,  /* Task handle. */
+    tskNO_AFFINITY); /* Core where the task should run */
+
+  xTaskCreatePinnedToCore(
+    DrawImage, /* Function to implement the task */
+    "DrawImage", /* Name of the task */
+    10000,  /* Stack size in words */
+    NULL,  /* Task input parameter */
+    0,  /* Priority of the task */
+    &tDrawImage,  /* Task handle. */
+    tskNO_AFFINITY); /* Core where the task should run */
 }
 
-void localstream() {
-  Serial.println("LOC");
-  camera_fb_t * fb = NULL;
-  fb = esp_camera_fb_get();
-  esp_err_t res = ESP_OK;
-
-  if (!fb) {
-    Serial.println(F("Stream failed"));
+void GetImage(void * parameter) {
+  while (1) {
+    if (!fb) {
+      fb = esp_camera_fb_get();
+      xTaskNotifyGive(tDrawImage);
+      
+      delay(1);
+    } else {
+      esp_camera_fb_return(fb);
+      fb = NULL;
+    }
   }
+}
 
-  if (fb->format == PIXFORMAT_JPEG) {
-    drawArrayJpeg(fb->buf, fb->len, 0, 0);
-  } else {
-    tft.setAddrWindow(0, 0, 240, 180);
-    tft.pushColors(fb->buf, fb->len);
-  }
+void DrawImage(void * parameter) {
+  while (1) {
+    ulTaskNotifyTake( pdTRUE,
+                      portMAX_DELAY);
 
-  if (fb) {
-    esp_camera_fb_return(fb);
-    fb = NULL;
+    if (! fb) {
+      Serial.println(F("Exxxx"));
+    } else {
+      if (fb->format == PIXFORMAT_JPEG) {
+        drawArrayJpeg(fb->buf, fb->len, 0, 0);
+      } else {
+        // Offset needed to circumvent flicker
+        tft.setAddrWindow(0, 0, 240, 180);
+        tft.pushColors(fb->buf, fb->len);
+      }
+    }
   }
-  Serial.println("END");
 }
 
 void loop() {
   yield();
-
-  localstream();
 }
